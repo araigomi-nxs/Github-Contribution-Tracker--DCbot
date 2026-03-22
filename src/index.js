@@ -81,7 +81,7 @@ const startAutoRefreshJob = () => {
           const latestCommit = recentCommits[0];
 
           // Fetch and add heatmap
-          const { imageUrl } = await fetchContributionGraph(
+          const graphData = await fetchContributionGraph(
             user.githubUsername,
             user.githubToken
           );
@@ -98,7 +98,8 @@ const startAutoRefreshJob = () => {
             user.githubUsername,
             `https://github.com/${user.githubUsername}`,
             null, // No text graph for auto-refresh
-            imageUrl // Include heatmap image
+            graphData.pngBuffer, // Include heatmap image as PNG buffer
+            user.githubUsername
           );
 
           // Update last sync time

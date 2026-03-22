@@ -82,8 +82,10 @@ const getClient = () => {
   return client;
 };
 
-const sendWebhookMessage = async (userId, title, description, author, commitUrl, graphText, imageUrl) => {
+const sendWebhookMessage = async (userId, title, description, author, commitUrl, graphText, imageUrlOrBuffer, userName) => {
   try {
+    const { AttachmentBuilder } = require('discord.js');
+    
     // Build embed
     const embed = new EmbedBuilder()
       .setTitle(title)
@@ -98,9 +100,18 @@ const sendWebhookMessage = async (userId, title, description, author, commitUrl,
       embed.addFields({ name: '📊 Contributions', value: graphText });
     }
 
-    // Add heatmap image if available (HTTP URL)
-    if (imageUrl) {
-      embed.setImage(imageUrl);
+    let files = [];
+
+    // Handle PNG buffer (preferred) or HTTP URL
+    if (imageUrlOrBuffer && Buffer.isBuffer(imageUrlOrBuffer)) {
+      // It's a PNG buffer - create file attachment
+      const attachmentName = `${userName || author}-contributions.png`;
+      const attachment = new AttachmentBuilder(imageUrlOrBuffer, { name: attachmentName });
+      embed.setImage(`attachment://${attachmentName}`);
+      files.push(attachment);
+    } else if (imageUrlOrBuffer) {
+      // It's an HTTP URL - use directly
+      embed.setImage(imageUrlOrBuffer);
     }
 
     // Try to send to the configured channel first
@@ -109,7 +120,11 @@ const sendWebhookMessage = async (userId, title, description, author, commitUrl,
         const channel = await client.channels.fetch(process.env.DISCORD_CHANNEL_ID);
 
         if (channel && channel.type === ChannelType.GuildText) {
-          await channel.send({ embeds: [embed] });
+          const messageOptions = { embeds: [embed] };
+          if (files.length > 0) {
+            messageOptions.files = files;
+          }
+          await channel.send(messageOptions);
           console.log(`✓ Message sent to Discord channel`);
           return;
         }
@@ -122,7 +137,11 @@ const sendWebhookMessage = async (userId, title, description, author, commitUrl,
     try {
       const user = await client.users.fetch(userId);
       if (user) {
-        await user.send({ embeds: [embed] });
+        const messageOptions = { embeds: [embed] };
+        if (files.length > 0) {
+          messageOptions.files = files;
+        }
+        await user.send(messageOptions);
         console.log(`✓ Message sent to user DM`);
       }
     } catch (error) {

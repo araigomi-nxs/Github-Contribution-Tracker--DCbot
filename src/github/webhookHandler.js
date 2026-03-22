@@ -38,7 +38,7 @@ const handlePushEvent = async (payload, userId, user) => {
 
   const title = `📝 ${totalCommits} Commit${totalCommits > 1 ? 's' : ''} Pushed`;
 
-  await sendWebhookMessage(userId, title, description, pusher.name, lastCommit.url, graphData.textGraph, graphData.imageUrl);
+  await sendWebhookMessage(userId, title, description, pusher.name, lastCommit.url, graphData.textGraph, graphData.pngBuffer, user.githubUsername);
 };
 
 const handlePullRequestEvent = async (payload, userId, user) => {
@@ -54,7 +54,7 @@ const handlePullRequestEvent = async (payload, userId, user) => {
 
   const description = `**Action:** ${status}\n**Repository:** [${repository.name}](${repository.html_url})\n**PR:** [${pull_request.title}](${pull_request.html_url})\n**Author:** ${pull_request.user.login}`;
 
-  await sendWebhookMessage(userId, `${status} Pull Request`, description, pull_request.user.login, pull_request.html_url, graphData.textGraph, graphData.imageUrl);
+  await sendWebhookMessage(userId, `${status} Pull Request`, description, pull_request.user.login, pull_request.html_url, graphData.textGraph, graphData.pngBuffer, user.githubUsername);
 };
 
 const handleIssueEvent = async (payload, userId, user) => {
@@ -70,7 +70,7 @@ const handleIssueEvent = async (payload, userId, user) => {
 
   const description = `**Action:** ${status}\n**Repository:** [${repository.name}](${repository.html_url})\n**Issue:** [${issue.title}](${issue.html_url})\n**Author:** ${issue.user.login}`;
 
-  await sendWebhookMessage(userId, `${status} Issue`, description, issue.user.login, issue.html_url, graphData.textGraph, graphData.imageUrl);
+  await sendWebhookMessage(userId, `${status} Issue`, description, issue.user.login, issue.html_url, graphData.textGraph, graphData.pngBuffer, user.githubUsername);
 };
 
 module.exports = {
