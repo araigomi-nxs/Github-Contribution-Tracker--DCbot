@@ -203,7 +203,7 @@ module.exports = [
       .setDescription('View your yearly contribution heatmap'),
 
     async execute(interaction) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: false });
 
       const user = getUser(interaction.user.id);
 
