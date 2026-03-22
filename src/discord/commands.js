@@ -1,6 +1,7 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { addUser, removeUser, listUserInfo, getUser } = require('../storage/userStorage');
 const { fetchRecentCommits, fetchContributionGraph } = require('../github/contributionGraphGenerator');
+const { generateWeeklyTextContribution } = require('../github/chartRenderer');
 
 /**
  * Generate a random webhook secret
@@ -54,7 +55,7 @@ module.exports = [
 
         const embed = new EmbedBuilder()
           .setTitle('✅ GitHub User Tracked')
-          .setColor(0x28a745)
+          .setColor(0xD5E339)
           .setDescription(`Successfully started tracking **${username}**`)
           .addFields(
             { name: 'GitHub Username', value: `\`${username}\``, inline: true },
@@ -77,7 +78,7 @@ module.exports = [
 
         const embed = new EmbedBuilder()
           .setTitle('❌ Error Tracking User')
-          .setColor(0xdc3545)
+          .setColor(0xD5E339)
           .setDescription('Failed to track GitHub user')
           .addFields({
             name: 'Reason',
@@ -101,7 +102,7 @@ module.exports = [
 
       const embed = new EmbedBuilder()
         .setTitle('📊 Tracked User Info')
-        .setColor(0x1f6feb)
+        .setColor(0xD5E339)
         .setDescription(info);
 
       await interaction.editReply({ embeds: [embed] });
@@ -121,14 +122,14 @@ module.exports = [
       if (removed) {
         const embed = new EmbedBuilder()
           .setTitle('✅ Untracked')
-          .setColor(0x28a745)
+          .setColor(0xD5E339)
           .setDescription('Stopped tracking your GitHub user');
 
         await interaction.editReply({ embeds: [embed] });
       } else {
         const embed = new EmbedBuilder()
           .setTitle('❌ No User Tracked')
-          .setColor(0xdc3545)
+          .setColor(0xD5E339)
           .setDescription('You do not have a tracked GitHub user');
 
         await interaction.editReply({ embeds: [embed] });
@@ -149,7 +150,7 @@ module.exports = [
       if (!user) {
         const embed = new EmbedBuilder()
           .setTitle('❌ No User Tracked')
-          .setColor(0xdc3545)
+          .setColor(0xD5E339)
           .setDescription('Run `/track` first to track your GitHub user');
 
         await interaction.editReply({ embeds: [embed] });
@@ -162,7 +163,7 @@ module.exports = [
         if (recentCommits.length === 0) {
           const embed = new EmbedBuilder()
             .setTitle('📊 No Recent Commits')
-            .setColor(0x1f6feb)
+            .setColor(0xD5E339)
             .setDescription(`No commits found for **${user.githubUsername}** in the last 24 hours`);
 
           await interaction.editReply({ embeds: [embed] });
@@ -176,7 +177,7 @@ module.exports = [
 
         const embed = new EmbedBuilder()
           .setTitle(`📝 Recent Commits - Last 24 Hours`)
-          .setColor(0x1f6feb)
+          .setColor(0xD5E339)
           .setDescription(commitMessages)
           .setAuthor({ name: user.githubUsername })
           .setURL(`https://github.com/${user.githubUsername}`)
@@ -189,7 +190,7 @@ module.exports = [
 
         const embed = new EmbedBuilder()
           .setTitle('❌ Error Fetching Commits')
-          .setColor(0xdc3545)
+          .setColor(0xD5E339)
           .setDescription('Failed to fetch recent commits. Check your GitHub token.');
 
         await interaction.editReply({ embeds: [embed] });
@@ -210,7 +211,7 @@ module.exports = [
       if (!user) {
         const embed = new EmbedBuilder()
           .setTitle('❌ No User Tracked')
-          .setColor(0xdc3545)
+          .setColor(0xD5E339)
           .setDescription('Run `/track` first to track your GitHub user');
 
         await interaction.editReply({ embeds: [embed] });
@@ -222,29 +223,40 @@ module.exports = [
 
         const embed = new EmbedBuilder()
           .setTitle(`📊 ${user.githubUsername}'s Contribution Heatmap`)
-          .setColor(0x28a745)
+          .setDescription(graphData.dateRange || 'Loading contribution data...')
+          .setColor(0xD5E339)
           .setAuthor({ name: user.githubUsername })
           .setURL(`https://github.com/${user.githubUsername}`)
           .setTimestamp()
-          .setFooter({ text: `Total contributions tracked: ${graphData.contributionCount}` });
+          .setFooter({ text: `Total contributions tracked: ${graphData.contributionCount || 0}` });
 
-        // Add text graph as fallback
-        if (graphData.textGraph) {
-          embed.addFields({ name: 'Contribution Summary', value: graphData.textGraph });
+        // Add weekly text contribution if available
+        if (graphData.contributionMap && graphData.contributionMap.size > 0) {
+          const weeklyText = generateWeeklyTextContribution(graphData.contributionMap);
+          if (weeklyText) {
+            embed.addFields({ name: '📈 This Week', value: weeklyText, inline: false });
+          }
         }
 
-        // Add heatmap image
-        if (graphData.imageUrl) {
-          embed.setImage(graphData.imageUrl);
+        // Display generated contribution chart as PNG
+        if (graphData.pngBuffer) {
+          // Create file attachment from PNG buffer
+          const attachment = new AttachmentBuilder(graphData.pngBuffer, { name: `${user.githubUsername}-contributions.png` });
+          
+          embed.setImage(`attachment://${user.githubUsername}-contributions.png`);
+          embed.setDescription(graphData.dateRange || 'No recent contributions');
+          
+          await interaction.editReply({ embeds: [embed], files: [attachment] });
+        } else {
+          embed.setDescription(graphData.dateRange || 'No contribution data available');
+          await interaction.editReply({ embeds: [embed] });
         }
-
-        await interaction.editReply({ embeds: [embed] });
       } catch (error) {
         console.error('Error fetching contribution graph:', error);
 
         const embed = new EmbedBuilder()
           .setTitle('❌ Error Fetching Heatmap')
-          .setColor(0xdc3545)
+          .setColor(0xD5E339)
           .setDescription('Failed to fetch contribution heatmap. Check your GitHub token.');
 
         await interaction.editReply({ embeds: [embed] });

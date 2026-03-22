@@ -37,7 +37,7 @@ const initializeDiscordBot = async () => {
     }
   });
 
-  client.once('ready', async () => {
+  client.once('clientReady', async () => {
     console.log(`✓ Discord bot logged in as ${client.user.tag}`);
 
     // Register slash commands
@@ -84,58 +84,49 @@ const getClient = () => {
 
 const sendWebhookMessage = async (userId, title, description, author, commitUrl, graphText, imageUrl) => {
   try {
+    // Build embed
+    const embed = new EmbedBuilder()
+      .setTitle(title)
+      .setDescription(description)
+      .setAuthor({ name: author })
+      .setColor(0x1f6feb)
+      .setURL(commitUrl)
+      .setTimestamp();
+
+    // Add contribution graph as a field if available
+    if (graphText) {
+      embed.addFields({ name: '📊 Contributions', value: graphText });
+    }
+
+    // Add heatmap image if available (HTTP URL)
+    if (imageUrl) {
+      embed.setImage(imageUrl);
+    }
+
     // Try to send to the configured channel first
     if (process.env.DISCORD_CHANNEL_ID) {
-      const channel = await client.channels.fetch(process.env.DISCORD_CHANNEL_ID);
+      try {
+        const channel = await client.channels.fetch(process.env.DISCORD_CHANNEL_ID);
 
-      if (channel && channel.type === ChannelType.GuildText) {
-        const embed = new EmbedBuilder()
-          .setTitle(title)
-          .setDescription(description)
-          .setAuthor({ name: author })
-          .setColor(0x1f6feb)
-          .setURL(commitUrl)
-          .setTimestamp()
-
-        // Add contribution graph as a field if available
-        if (graphText) {
-          embed.addFields({ name: '📊 Contributions', value: graphText });
+        if (channel && channel.type === ChannelType.GuildText) {
+          await channel.send({ embeds: [embed] });
+          console.log(`✓ Message sent to Discord channel`);
+          return;
         }
-
-        // Add heatmap image if available
-        if (imageUrl) {
-          embed.setImage(imageUrl);
-        }
-
-        await channel.send({ embeds: [embed] });
-        console.log(`✓ Message sent to Discord channel`);
-        return;
+      } catch (error) {
+        console.error('Error sending to channel:', error);
       }
     }
 
     // Fallback: Send as DM to the user
-    const user = await client.users.fetch(userId);
-    if (user) {
-      const embed = new EmbedBuilder()
-        .setTitle(title)
-        .setDescription(description)
-        .setAuthor({ name: author })
-        .setColor(0x1f6feb)
-        .setURL(commitUrl)
-        .setTimestamp()
-
-      // Add contribution graph as a field if available
-      if (graphText) {
-        embed.addFields({ name: '📊 Contributions', value: graphText });
+    try {
+      const user = await client.users.fetch(userId);
+      if (user) {
+        await user.send({ embeds: [embed] });
+        console.log(`✓ Message sent to user DM`);
       }
-
-      // Add heatmap image if available
-      if (imageUrl) {
-        embed.setImage(imageUrl);
-      }
-
-      await user.send({ embeds: [embed] });
-      console.log(`✓ Message sent to user DM`);
+    } catch (error) {
+      console.error('Error sending DM:', error);
     }
   } catch (error) {
     console.error('Error sending Discord message:', error);

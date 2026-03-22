@@ -1,26 +1,66 @@
 const axios = require('axios');
-const cheerio = require('cheerio');
+const { generateContributionHeatmapPNG, generateContributionHeatmapSVG, svgToDataUri } = require('./chartRenderer');
 
 /**
- * Parse GitHub contributions for a user using GraphQL API
+ * Generate contribution chart image locally as PNG (GitHub-style heatmap)
+ * No external APIs needed - completely self-contained
  * @param {string} username - GitHub username
- * @param {string} token - GitHub personal access token
- * @returns {Promise<Map<string, number>>} Contribution data map
+ * @param {Map} contributionMap - Contribution data
+ * @returns {Promise<Object>} { png: Buffer, svg: string }
  */
+const generateLocalChartImage = async (username, contributionMap) => {
+  if (contributionMap.size === 0) {
+    console.warn(`⚠️ No contribution data for ${username}`);
+    return null;
+  }
+
+  try {
+    console.log(`🎨 Generating contribution heatmap for ${username} with ${contributionMap.size} contribution days`);
+    
+    // Generate chart as PNG heatmap (GitHub-style grid)
+    const chartData = await generateContributionHeatmapPNG(username, contributionMap);
+    
+    if (!chartData || !chartData.png) {
+      console.error('❌ Failed to generate contribution heatmap PNG');
+      return null;
+    }
+
+    console.log(`✅ Heatmap generated successfully (${chartData.png.length} bytes)`);
+    
+    return chartData;  // Returns { png: Buffer, svg: string }
+    
+  } catch (error) {
+    console.error(`❌ Error generating local chart: ${error.message}`);
+    return null;
+  }
+};
+
+
+
 const parseGitHubContributions = async (username, token) => {
   try {
     const contributionMap = new Map();
 
     if (!token) {
-      console.warn('No GitHub token provided');
+      console.warn('⚠️ No GitHub token provided');
       return contributionMap;
     }
 
-    // GraphQL query to fetch contributions from the past year
+    console.log(`🔗 Fetching contributions for @${username}...`);
+
+    // Calculate date range: 6 months ago to today (includes private contributions)
+    const newestDate = new Date();
+    const cutoffDate = new Date(newestDate);
+    cutoffDate.setMonth(cutoffDate.getMonth() - 6);
+    
+    const fromDate = cutoffDate.toISOString();
+    const toDate = newestDate.toISOString();
+
+    // GraphQL query to fetch contributions including private contributions
     const query = `
       query {
         user(login: "${username}") {
-          contributionsCollection {
+          contributionsCollection(from: "${fromDate}", to: "${toDate}") {
             contributionCalendar {
               isHalloween
               weeks {
@@ -47,16 +87,20 @@ const parseGitHubContributions = async (username, token) => {
     );
 
     if (response.data.errors) {
-      console.error('GraphQL error:', response.data.errors);
+      console.error('❌ GraphQL error:', response.data.errors);
       return contributionMap;
     }
 
     // Parse the contribution calendar
     const weeks = response.data.data?.user?.contributionsCollection?.contributionCalendar?.weeks || [];
     
+    // Convert cutoffDate to YYYY-MM-DD format for filtering
+    const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+
     weeks.forEach((week) => {
       week.contributionDays.forEach((day) => {
-        if (day.contributionCount > 0) {
+        // Store ALL days from last 6 months (including zero contributions)
+        if (day.date >= cutoffDateStr) {
           contributionMap.set(day.date, day.contributionCount);
         }
       });
@@ -64,115 +108,47 @@ const parseGitHubContributions = async (username, token) => {
 
     return contributionMap;
   } catch (error) {
-    console.error('Error parsing GitHub contributions:', error);
+    console.error('❌ Error parsing GitHub contributions:', error.message);
     return new Map();
   }
 };
 
 /**
- * Generate a heatmap image URL using QuickChart
+ * Generate contribution heatmap as PNG image (locally, no external APIs)
  * @param {string} username - GitHub username
  * @param {Map} contributionMap - Contribution data
- * @returns {string} QuickChart URL for the heatmap
+ * @returns {Promise<Object>} { pngBuffer: Buffer, dateRange: string }
  */
-const generateHeatmapImageUrl = (username, contributionMap) => {
+const generateHeatmapImageUrl = async (username, contributionMap) => {
   try {
     if (contributionMap.size === 0) {
-      return null;
+      console.warn(`⚠️ No contribution data for ${username}`);
+      return { pngBuffer: null, dateRange: 'No contributions found in last 6 months' };
     }
 
-    const sortedDates = Array.from(contributionMap.keys()).sort();
-    const maxContributions = Math.max(...Array.from(contributionMap.values()), 1);
+    // Generate chart locally (no external API calls)
+    const chartData = await generateLocalChartImage(username, contributionMap);
     
-    // GitHub-style color palette
-    const colors = ['#ebedf0', '#c6e48b', '#7bc96f', '#239a3b', '#196127'];
-    
-    // Create grid: Map dates to grid coordinates
-    const grid = {};
-    const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    
-    sortedDates.forEach((dateStr) => {
-      const date = new Date(dateStr);
-      const year = date.getFullYear();
-      const dayOfWeek = date.getDay();
-      
-      // Calculate ISO week number
-      const d = new Date(Date.UTC(year, date.getMonth(), date.getDate()));
-      const dayNum = d.getUTCDay() || 7;
-      d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-      const weekNum = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-      
-      grid[`${weekNum}-${dayOfWeek}`] = {
-        date: dateStr,
-        count: contributionMap.get(dateStr),
-      };
-    });
-    
-    // SVG dimensions
-    const cellSize = 12;
-    const cellPadding = 2;
-    const marginLeft = 40;
-    const marginTop = 30;
-    const marginBottom = 20;
-    const weeksToShow = 52;
-    
-    const width = marginLeft + weeksToShow * (cellSize + cellPadding) + 40;
-    const height = marginTop + 7 * (cellSize + cellPadding) + marginBottom;
-    
-    let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <style>
-        .cell { stroke: #e0e0e0; stroke-width: 1; }
-        .day-label { font-size: 11px; text-anchor: end; fill: #666; font-family: Arial; }
-        .month-label { font-size: 10px; text-anchor: middle; fill: #999; font-family: Arial; }
-        .title { font-size: 14px; font-weight: bold; fill: #333; font-family: Arial; }
-        .tooltip { font-size: 10px; }
-      </style>
-      
-      <text x="${width / 2}" y="20" text-anchor="middle" class="title">${username}'s Contributions (Last Year)</text>`;
-    
-    // Draw day labels (Sun-Sat)
-    dayLabels.forEach((day, idx) => {
-      svg += `<text x="30" y="${marginTop + idx * (cellSize + cellPadding) + cellSize}" class="day-label">${day}</text>`;
-    });
-    
-    // Draw grid cells
-    for (let week = 0; week < weeksToShow; week++) {
-      for (let day = 0; day < 7; day++) {
-        const key = `${week}-${day}`;
-        const cellData = grid[key];
-        const count = cellData ? cellData.count : 0;
-        
-        // Calculate color intensity
-        let colorIdx = 0;
-        if (count > 0) {
-          const intensity = count / maxContributions;
-          if (intensity > 0.75) colorIdx = 4;
-          else if (intensity > 0.5) colorIdx = 3;
-          else if (intensity > 0.25) colorIdx = 2;
-          else colorIdx = 1;
-        }
-        
-        const x = marginLeft + week * (cellSize + cellPadding);
-        const y = marginTop + day * (cellSize + cellPadding);
-        const title = cellData ? `${cellData.date}: ${count} contribution${count !== 1 ? 's' : ''}` : 'No data';
-        
-        svg += `<rect class="cell" x="${x}" y="${y}" width="${cellSize}" height="${cellSize}" fill="${colors[colorIdx]}" rx="1">
-          <title>${title}</title>
-        </rect>`;
-      }
+    if (!chartData || !chartData.png) {
+      console.warn(`⚠️ Failed to generate PNG for ${username}`);
+      return { pngBuffer: null, dateRange: 'Failed to generate chart' };
     }
     
-    svg += `</svg>`;
+    // Format date range
+    const sortedDates = Array.from(contributionMap.keys()).sort();
+    const firstDate = new Date(sortedDates[0]);
+    const lastDate = new Date(sortedDates[sortedDates.length - 1]);
+    const formattedDateRange = `${firstDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })} - ${lastDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}`;
     
-    // Convert SVG to data URL
-    const encodedSvg = encodeURIComponent(svg);
-    const imageUrl = `data:image/svg+xml,${encodedSvg}`;
+    console.log(`✅ Heatmap & date range ready for @${username}`);
     
-    return imageUrl;
+    return { 
+      pngBuffer: chartData.png,  // PNG image buffer
+      dateRange: formattedDateRange
+    };
   } catch (error) {
-    console.error('Error generating heatmap image URL:', error);
-    return null;
+    console.error(`❌ Error generating heatmap: ${error.message}`);
+    return { pngBuffer: null, dateRange: 'Error generating heatmap' };
   }
 };
 
@@ -328,32 +304,36 @@ const fetchRecentCommits = async (username, token, limitDays = 7) => {
 };
 
 /**
- * Fetch contribution graph data with both text and image
+ * Fetch contribution graph data with locally generated PNG chart
  * @param {string} username - GitHub username
  * @param {string} token - GitHub personal access token
- * @returns {Promise<Object>} Object with text graph and image buffer
+ * @returns {Promise<Object>} Object with PNG buffer, metadata, and contribution map
  */
 const fetchContributionGraph = async (username, token) => {
   try {
+    console.log(`📊 fetchContributionGraph called for @${username}`);
     const contributionMap = await parseGitHubContributions(username, token);
 
     const textGraph = generateTextGraph(username, contributionMap);
-    const imageUrl = generateHeatmapImageUrl(username, contributionMap);
-    const imageBuffer = await downloadHeatmapImage(imageUrl);
+    const heatmapData = await generateHeatmapImageUrl(username, contributionMap);
+
+    console.log(`✅ fetchContributionGraph complete: ${contributionMap.size} contributions, PNG: ${heatmapData.pngBuffer ? 'generated' : 'null'}`);
 
     return {
       textGraph,
-      imageUrl,
-      imageBuffer,
+      pngBuffer: heatmapData.pngBuffer,  // PNG image buffer
+      dateRange: heatmapData.dateRange,
       contributionCount: contributionMap.size,
+      contributionMap,  // Include the map for additional processing
     };
   } catch (error) {
-    console.error('Error fetching contribution graph:', error);
+    console.error('❌ Error fetching contribution graph:', error);
     return {
       textGraph: 'Error generating contribution graph',
-      imageUrl: null,
-      imageBuffer: null,
+      pngBuffer: null,
+      dateRange: '',
       contributionCount: 0,
+      contributionMap: new Map(),
     };
   }
 };

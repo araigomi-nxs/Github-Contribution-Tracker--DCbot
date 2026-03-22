@@ -104,7 +104,7 @@ const startAutoRefreshJob = () => {
           // Update last sync time
           await updateLastSyncTime(userId);
 
-          console.log(`✓ Sent latest commit for ${user.githubUsername}`);
+          console.log(`✓ Sent latest commit for ${user.githubUsername}`);  
         } catch (userError) {
           console.error(`Error syncing user ${userId}:`, userError);
         }
