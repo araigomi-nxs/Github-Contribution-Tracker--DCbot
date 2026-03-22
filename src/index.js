@@ -80,6 +80,13 @@ const startAutoRefreshJob = () => {
           // Get only the latest commit
           const latestCommit = recentCommits[0];
 
+          // Check if this commit has already been sent
+          const lastSentHash = getLastCommitHash(userId);
+          if (lastSentHash === latestCommit.oid) {
+            console.log(`⏭️  Skipping duplicate commit for ${user.githubUsername}: ${latestCommit.oid.substring(0, 7)}`);
+            continue;
+          }
+
           // Fetch and add heatmap
           const graphData = await fetchContributionGraph(
             user.githubUsername,
@@ -102,10 +109,11 @@ const startAutoRefreshJob = () => {
             user.githubUsername
           );
 
-          // Update last sync time
+          // Update last sync time and commit hash
           await updateLastSyncTime(userId);
+          await updateLastCommitHash(userId, latestCommit.oid);
 
-          console.log(`✓ Sent latest commit for ${user.githubUsername}`);  
+          console.log(`✓ Sent latest commit for ${user.githubUsername}: ${latestCommit.oid.substring(0, 7)}`);  
         } catch (userError) {
           console.error(`Error syncing user ${userId}:`, userError);
         }
@@ -120,11 +128,92 @@ const startAutoRefreshJob = () => {
   console.log('✓ Auto-refresh job started (checks every 5 minutes)');
 };
 
+// Daily contribution graph job (sends at 6am UTC+8 = 22:00 UTC)
+const startDailyGraphJob = () => {
+  // Calculate time until next 6am UTC+8 (22:00 UTC)
+  const calculateTimeUntilNextRun = () => {
+    const now = new Date();
+    const currentUTC = new Date(now.getTime() + now.getTimezoneOffset() * 60000);
+    
+    // Target: 22:00 UTC (6am UTC+8)
+    const target = new Date(currentUTC);
+    target.setUTCHours(22, 0, 0, 0);
+    
+    // If we've already passed 22:00 UTC today, schedule for tomorrow
+    if (currentUTC >= target) {
+      target.setUTCDate(target.getUTCDate() + 1);
+    }
+    
+    const msUntilRun = target - currentUTC;
+    return msUntilRun;
+  };
+
+  const runDailyGraph = async () => {
+    try {
+      const users = getAllUsers();
+      const runTime = new Date().toISOString();
+
+      console.log(`\n📊 Daily contribution graph job started at ${runTime}`);
+
+      for (const [userId, user] of Object.entries(users)) {
+        try {
+          // Fetch contribution graph
+          const graphData = await fetchContributionGraph(
+            user.githubUsername,
+            user.githubToken
+          );
+
+          if (!graphData || !graphData.pngBuffer) {
+            console.log(`⚠️  No graph data for ${user.githubUsername}`);
+            continue;
+          }
+
+          const description = `**Daily Contribution Summary**\n\n${graphData.dateRange}\n\n_Sent daily at 6am UTC+8_`;
+          const title = `📈 Daily Contributions`;
+
+          await sendWebhookMessage(
+            userId,
+            title,
+            description,
+            user.githubUsername,
+            `https://github.com/${user.githubUsername}`,
+            null,
+            graphData.pngBuffer,
+            user.githubUsername
+          );
+
+          console.log(`✓ Sent daily graph for ${user.githubUsername}`);
+        } catch (userError) {
+          console.error(`Error sending daily graph to user ${userId}:`, userError);
+        }
+      }
+
+      console.log(`✓ Daily graph job completed at ${new Date().toISOString()}`);
+    } catch (error) {
+      console.error('Daily graph job error:', error);
+    }
+
+    // Schedule next run (24 hours later)
+    setTimeout(runDailyGraph, 24 * 60 * 60 * 1000);
+  };
+
+  // Schedule first run
+  const msUntilFirstRun = calculateTimeUntilNextRun();
+  const firstRunTime = new Date(Date.now() + msUntilFirstRun);
+
+  console.log(`✓ Daily graph job scheduled for ${firstRunTime.toISOString()} (in ${Math.round(msUntilFirstRun / 1000 / 60)} minutes at 6am UTC+8)`);
+  
+  setTimeout(runDailyGraph, msUntilFirstRun);
+};
+
 // Initialize Discord bot
 initializeDiscordBot();
 
 // Start auto-refresh job
 startAutoRefreshJob();
+
+// Start daily graph job
+startDailyGraphJob();
 
 // Start server
 app.listen(PORT, () => {

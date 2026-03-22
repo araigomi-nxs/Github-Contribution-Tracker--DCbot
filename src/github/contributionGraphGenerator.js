@@ -287,6 +287,7 @@ const fetchRecentCommits = async (username, token, limitDays = 7) => {
             repo: repo.name,
             repoUrl: repo.url,
             message: commit.message.split('\n')[0], // First line only
+            oid: commit.oid, // Full commit hash for deduplication
             shortHash: commit.oid.substring(0, 7),
             date: commit.committedDate,
             author: commit.author?.name || 'Unknown',
