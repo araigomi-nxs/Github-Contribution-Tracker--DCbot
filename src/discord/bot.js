@@ -96,7 +96,6 @@ const sendWebhookMessage = async (userId, title, description, author, commitUrl,
           .setColor(0x1f6feb)
           .setURL(commitUrl)
           .setTimestamp()
-          .setFooter({ text: `Tracked by <@${userId}>` });
 
         // Add contribution graph as a field if available
         if (graphText) {
@@ -108,7 +107,7 @@ const sendWebhookMessage = async (userId, title, description, author, commitUrl,
           embed.setImage(imageUrl);
         }
 
-        await channel.send({ embeds: [embed], content: `<@${userId}>` });
+        await channel.send({ embeds: [embed] });
         console.log(`✓ Message sent to Discord channel`);
         return;
       }
@@ -123,7 +122,7 @@ const sendWebhookMessage = async (userId, title, description, author, commitUrl,
         .setAuthor({ name: author })
         .setColor(0x1f6feb)
         .setURL(commitUrl)
-        .setTimestamp();
+        .setTimestamp()
 
       // Add contribution graph as a field if available
       if (graphText) {

@@ -3,8 +3,8 @@ const express = require('express');
 const { createHmac, timingSafeEqual } = require('crypto');
 const { initializeDiscordBot, sendWebhookMessage } = require('./discord/bot');
 const { handleGitHubWebhook } = require('./github/webhookHandler');
-const { fetchRecentCommits } = require('./github/contributionGraphGenerator');
-const { getUser, getAllUsers, updateLastSyncTime, getLastSyncTime } = require('./storage/userStorage');
+const { fetchRecentCommits, fetchContributionGraph } = require('./github/contributionGraphGenerator');
+const { getUser, getAllUsers, updateLastSyncTime, getLastSyncTime, updateLastCommitHash, getLastCommitHash } = require('./storage/userStorage');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -75,28 +75,51 @@ const startAutoRefreshJob = () => {
             continue;
           }
 
-          // Format commits for Discord
-          const commitMessages = recentCommits
-            .slice(0, 5) // Show top 5 commits
+          // Get the last sent commit hash
+          const lastCommitHash = getLastCommitHash(userId);
+
+          // Filter to only NEW commits (after the last sent one)
+          const newCommits = lastCommitHash
+            ? recentCommits.filter((commit) => commit.shortHash !== lastCommitHash)
+            : recentCommits; // If no last hash, show all recent
+
+          if (newCommits.length === 0) {
+            console.log(`✓ No new commits for ${user.githubUsername}`);
+            continue;
+          }
+
+          // Only show new commits (up to 5)
+          const commitMessages = newCommits
+            .slice(0, 5)
             .map((commit) => `• [\`${commit.shortHash}\`](${commit.repoUrl}/commit/${commit.shortHash}) ${commit.message} - **${commit.repo}**`)
             .join('\n');
 
-          const description = `**Recent Commits (Last 24 Hours)**\n\n${commitMessages}`;
-          const title = `📝 ${recentCommits.length} New Commit${recentCommits.length > 1 ? 's' : ''}`;
+          const description = `**New Commits**\n\n${commitMessages}`;
+          const title = `📝 ${newCommits.length} New Commit${newCommits.length > 1 ? 's' : ''}`;
 
-          // Send to Discord
+          // Fetch and add heatmap
+          const { imageUrl } = await fetchContributionGraph(
+            user.githubUsername,
+            user.githubToken
+          );
+
           await sendWebhookMessage(
             userId,
             title,
             description,
             user.githubUsername,
             `https://github.com/${user.githubUsername}`,
-            null, // No text graph
-            null  // No image
+            null, // No text graph for auto-refresh
+            imageUrl // Include heatmap image
           );
+
+          // Update last sent commit hash (the most recent one)
+          await updateLastCommitHash(userId, newCommits[0].shortHash);
 
           // Update last sync time
           await updateLastSyncTime(userId);
+
+          console.log(`✓ Sent ${newCommits.length} new commits for ${user.githubUsername}`);
         } catch (userError) {
           console.error(`Error syncing user ${userId}:`, userError);
         }

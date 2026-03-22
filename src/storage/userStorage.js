@@ -123,6 +123,11 @@ const validateUserData = (data) => {
     if (user.lastSyncTime && typeof user.lastSyncTime !== 'string') {
       throw new Error(`Invalid lastSyncTime for user ${userId}`);
     }
+
+    // lastCommitHash is optional
+    if (user.lastCommitHash && typeof user.lastCommitHash !== 'string') {
+      throw new Error(`Invalid lastCommitHash for user ${userId}`);
+    }
   }
 
   return true;
@@ -313,6 +318,29 @@ const getLastSyncTime = (userId) => {
   return null;
 };
 
+/**
+ * Update the last sent commit hash for a user
+ * @param {string} userId - Discord user ID
+ * @param {string} commitHash - Last commit hash that was sent
+ */
+const updateLastCommitHash = async (userId, commitHash) => {
+  const users = loadUsers();
+  if (userId in users) {
+    users[userId].lastCommitHash = commitHash;
+    await saveUsers(users);
+  }
+};
+
+/**
+ * Get the last sent commit hash for a user
+ * @param {string} userId - Discord user ID
+ * @returns {string|null} Last commit hash or null
+ */
+const getLastCommitHash = (userId) => {
+  const user = getUser(userId);
+  return user && user.lastCommitHash ? user.lastCommitHash : null;
+};
+
 module.exports = {
   addUser,
   removeUser,
@@ -323,4 +351,6 @@ module.exports = {
   getStats,
   updateLastSyncTime,
   getLastSyncTime,
+  updateLastCommitHash,
+  getLastCommitHash,
 };

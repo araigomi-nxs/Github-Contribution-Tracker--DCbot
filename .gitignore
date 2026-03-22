@@ -6,3 +6,5 @@ dist/
 .vscode/settings.json
 *.ts
 tsconfig.json
+src/tracked-users.json
+src/tracked-users-backup.json

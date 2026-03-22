@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { addUser, removeUser, listUserInfo, getUser } = require('../storage/userStorage');
-const { fetchRecentCommits } = require('../github/contributionGraphGenerator');
+const { fetchRecentCommits, fetchContributionGraph } = require('../github/contributionGraphGenerator');
 
 /**
  * Generate a random webhook secret
@@ -191,6 +191,61 @@ module.exports = [
           .setTitle('❌ Error Fetching Commits')
           .setColor(0xdc3545)
           .setDescription('Failed to fetch recent commits. Check your GitHub token.');
+
+        await interaction.editReply({ embeds: [embed] });
+      }
+    },
+  },
+
+  {
+    data: new SlashCommandBuilder()
+      .setName('graph')
+      .setDescription('View your yearly contribution heatmap'),
+
+    async execute(interaction) {
+      await interaction.deferReply({ ephemeral: true });
+
+      const user = getUser(interaction.user.id);
+
+      if (!user) {
+        const embed = new EmbedBuilder()
+          .setTitle('❌ No User Tracked')
+          .setColor(0xdc3545)
+          .setDescription('Run `/track` first to track your GitHub user');
+
+        await interaction.editReply({ embeds: [embed] });
+        return;
+      }
+
+      try {
+        const graphData = await fetchContributionGraph(user.githubUsername, user.githubToken);
+
+        const embed = new EmbedBuilder()
+          .setTitle(`📊 ${user.githubUsername}'s Contribution Heatmap`)
+          .setColor(0x28a745)
+          .setAuthor({ name: user.githubUsername })
+          .setURL(`https://github.com/${user.githubUsername}`)
+          .setTimestamp()
+          .setFooter({ text: `Total contributions tracked: ${graphData.contributionCount}` });
+
+        // Add text graph as fallback
+        if (graphData.textGraph) {
+          embed.addFields({ name: 'Contribution Summary', value: graphData.textGraph });
+        }
+
+        // Add heatmap image
+        if (graphData.imageUrl) {
+          embed.setImage(graphData.imageUrl);
+        }
+
+        await interaction.editReply({ embeds: [embed] });
+      } catch (error) {
+        console.error('Error fetching contribution graph:', error);
+
+        const embed = new EmbedBuilder()
+          .setTitle('❌ Error Fetching Heatmap')
+          .setColor(0xdc3545)
+          .setDescription('Failed to fetch contribution heatmap. Check your GitHub token.');
 
         await interaction.editReply({ embeds: [embed] });
       }
