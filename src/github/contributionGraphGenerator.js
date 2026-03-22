@@ -77,66 +77,98 @@ const parseGitHubContributions = async (username, token) => {
  */
 const generateHeatmapImageUrl = (username, contributionMap) => {
   try {
-    const contributionArray = Array.from(contributionMap.values());
-    const maxContributions = Math.max(...contributionArray, 1);
+    if (contributionMap.size === 0) {
+      return null;
+    }
 
-    // Create labels (dates) and data for the chart - show up to 52 weeks
     const sortedDates = Array.from(contributionMap.keys()).sort();
-    const labels = sortedDates.slice(-52); // Last 52 weeks (~1 year)
-    const data = labels.map((date) => contributionMap.get(date) || 0);
-
-    // Create QuickChart config with a horizontal bar chart
-    const chartConfig = {
-      type: 'bar',
-      data: {
-        labels: labels.map((d) => d), // Show full date
-        datasets: [
-          {
-            label: 'Contributions',
-            data: data,
-            backgroundColor: data.map((val) => {
-              // GitHub-style contribution colors
-              const intensity = val / maxContributions;
-              if (intensity === 0) return '#ebedf0';
-              if (intensity < 0.25) return '#c6e48b';
-              if (intensity < 0.5) return '#7bc96f';
-              if (intensity < 0.75) return '#239a3b';
-              return '#196127';
-            }),
-            borderRadius: 2,
-            borderSkipped: false,
-          },
-        ],
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        plugins: {
-          legend: {
-            display: false,
-          },
-          title: {
-            display: true,
-            text: `${username}'s Contributions (Last Year)`,
-            font: { size: 16 },
-          },
-        },
-        scales: {
-          x: {
-            beginAtZero: true,
-            max: maxContributions,
-            title: {
-              display: true,
-              text: 'Commits',
-            },
-          },
-        },
-      },
-    };
-
-    const encodedConfig = encodeURIComponent(JSON.stringify(chartConfig));
-    const imageUrl = `https://quickchart.io/chart?c=${encodedConfig}`;
-
+    const maxContributions = Math.max(...Array.from(contributionMap.values()), 1);
+    
+    // GitHub-style color palette
+    const colors = ['#ebedf0', '#c6e48b', '#7bc96f', '#239a3b', '#196127'];
+    
+    // Create grid: Map dates to grid coordinates
+    const grid = {};
+    const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    
+    sortedDates.forEach((dateStr) => {
+      const date = new Date(dateStr);
+      const year = date.getFullYear();
+      const dayOfWeek = date.getDay();
+      
+      // Calculate ISO week number
+      const d = new Date(Date.UTC(year, date.getMonth(), date.getDate()));
+      const dayNum = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      const weekNum = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+      
+      grid[`${weekNum}-${dayOfWeek}`] = {
+        date: dateStr,
+        count: contributionMap.get(dateStr),
+      };
+    });
+    
+    // SVG dimensions
+    const cellSize = 12;
+    const cellPadding = 2;
+    const marginLeft = 40;
+    const marginTop = 30;
+    const marginBottom = 20;
+    const weeksToShow = 52;
+    
+    const width = marginLeft + weeksToShow * (cellSize + cellPadding) + 40;
+    const height = marginTop + 7 * (cellSize + cellPadding) + marginBottom;
+    
+    let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      <style>
+        .cell { stroke: #e0e0e0; stroke-width: 1; }
+        .day-label { font-size: 11px; text-anchor: end; fill: #666; font-family: Arial; }
+        .month-label { font-size: 10px; text-anchor: middle; fill: #999; font-family: Arial; }
+        .title { font-size: 14px; font-weight: bold; fill: #333; font-family: Arial; }
+        .tooltip { font-size: 10px; }
+      </style>
+      
+      <text x="${width / 2}" y="20" text-anchor="middle" class="title">${username}'s Contributions (Last Year)</text>`;
+    
+    // Draw day labels (Sun-Sat)
+    dayLabels.forEach((day, idx) => {
+      svg += `<text x="30" y="${marginTop + idx * (cellSize + cellPadding) + cellSize}" class="day-label">${day}</text>`;
+    });
+    
+    // Draw grid cells
+    for (let week = 0; week < weeksToShow; week++) {
+      for (let day = 0; day < 7; day++) {
+        const key = `${week}-${day}`;
+        const cellData = grid[key];
+        const count = cellData ? cellData.count : 0;
+        
+        // Calculate color intensity
+        let colorIdx = 0;
+        if (count > 0) {
+          const intensity = count / maxContributions;
+          if (intensity > 0.75) colorIdx = 4;
+          else if (intensity > 0.5) colorIdx = 3;
+          else if (intensity > 0.25) colorIdx = 2;
+          else colorIdx = 1;
+        }
+        
+        const x = marginLeft + week * (cellSize + cellPadding);
+        const y = marginTop + day * (cellSize + cellPadding);
+        const title = cellData ? `${cellData.date}: ${count} contribution${count !== 1 ? 's' : ''}` : 'No data';
+        
+        svg += `<rect class="cell" x="${x}" y="${y}" width="${cellSize}" height="${cellSize}" fill="${colors[colorIdx]}" rx="1">
+          <title>${title}</title>
+        </rect>`;
+      }
+    }
+    
+    svg += `</svg>`;
+    
+    // Convert SVG to data URL
+    const encodedSvg = encodeURIComponent(svg);
+    const imageUrl = `data:image/svg+xml,${encodedSvg}`;
+    
     return imageUrl;
   } catch (error) {
     console.error('Error generating heatmap image URL:', error);

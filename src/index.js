@@ -69,39 +69,27 @@ const startAutoRefreshJob = () => {
 
       for (const [userId, user] of Object.entries(users)) {
         try {
-          const recentCommits = await fetchRecentCommits(user.githubUsername, user.githubToken, 1); // Last 1 day
+          // Fetch recent commits from last 3 days to always have available commits
+          const recentCommits = await fetchRecentCommits(user.githubUsername, user.githubToken, 3);
 
           if (recentCommits.length === 0) {
+            console.log(`✓ No commits found for ${user.githubUsername}`);
             continue;
           }
 
-          // Get the last sent commit hash
-          const lastCommitHash = getLastCommitHash(userId);
-
-          // Filter to only NEW commits (after the last sent one)
-          const newCommits = lastCommitHash
-            ? recentCommits.filter((commit) => commit.shortHash !== lastCommitHash)
-            : recentCommits; // If no last hash, show all recent
-
-          if (newCommits.length === 0) {
-            console.log(`✓ No new commits for ${user.githubUsername}`);
-            continue;
-          }
-
-          // Only show new commits (up to 5)
-          const commitMessages = newCommits
-            .slice(0, 5)
-            .map((commit) => `• [\`${commit.shortHash}\`](${commit.repoUrl}/commit/${commit.shortHash}) ${commit.message} - **${commit.repo}**`)
-            .join('\n');
-
-          const description = `**New Commits**\n\n${commitMessages}`;
-          const title = `📝 ${newCommits.length} New Commit${newCommits.length > 1 ? 's' : ''}`;
+          // Get only the latest commit
+          const latestCommit = recentCommits[0];
 
           // Fetch and add heatmap
           const { imageUrl } = await fetchContributionGraph(
             user.githubUsername,
             user.githubToken
           );
+
+          const commitMessage = `• [\`${latestCommit.shortHash}\`](${latestCommit.repoUrl}/commit/${latestCommit.shortHash}) ${latestCommit.message} - **${latestCommit.repo}**`;
+
+          const description = `**Latest Commit**\n\n${commitMessage}`;
+          const title = `📝 Latest Commit`;
 
           await sendWebhookMessage(
             userId,
@@ -113,13 +101,10 @@ const startAutoRefreshJob = () => {
             imageUrl // Include heatmap image
           );
 
-          // Update last sent commit hash (the most recent one)
-          await updateLastCommitHash(userId, newCommits[0].shortHash);
-
           // Update last sync time
           await updateLastSyncTime(userId);
 
-          console.log(`✓ Sent ${newCommits.length} new commits for ${user.githubUsername}`);
+          console.log(`✓ Sent latest commit for ${user.githubUsername}`);
         } catch (userError) {
           console.error(`Error syncing user ${userId}:`, userError);
         }
