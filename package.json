@@ -1,0 +1,26 @@
+{
+  "name": "github-contribution-tracker-discord-bot",
+  "version": "1.0.0",
+  "description": "A Discord bot that tracks GitHub contributions and sends real-time updates",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js"
+  },
+  "keywords": [
+    "discord",
+    "github",
+    "contributions",
+    "webhook",
+    "bot"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "axios": "^1.6.2",
+    "cheerio": "^1.0.0-rc.12"
+  }
+}
