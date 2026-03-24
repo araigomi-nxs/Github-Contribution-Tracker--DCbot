@@ -208,7 +208,7 @@ const downloadHeatmapImage = async (imageUrl) => {
 };
 
 /**
- * Fetch recent commits from user's repositories (public and private)
+ * Fetch recent commits from user's public repositories
  * @param {string} username - GitHub username
  * @param {string} token - GitHub personal access token
  * @param {number} limitDays - Only return commits from last N days
@@ -217,7 +217,7 @@ const downloadHeatmapImage = async (imageUrl) => {
 const fetchRecentCommits = async (username, token, limitDays = 7) => {
   try {
     if (!token) {
-      console.warn('⚠️ No GitHub token provided for fetchRecentCommits');
+      console.warn('No GitHub token provided');
       return [];
     }
 
@@ -225,17 +225,14 @@ const fetchRecentCommits = async (username, token, limitDays = 7) => {
     sinceDate.setDate(sinceDate.getDate() - limitDays);
     const sinceISO = sinceDate.toISOString();
 
-    console.log(`🔍 Fetching commits for @${username} from last ${limitDays} days since ${sinceISO.split('T')[0]}`);
-
-    // GraphQL query to fetch recent commits from ALL repositories (public + private)
+    // GraphQL query to fetch recent commits
     const query = `
       query {
         user(login: "${username}") {
-          repositories(first: 100, orderBy: {field: PUSHED_AT, direction: DESC}) {
+          repositories(first: 100, privacy: PUBLIC, orderBy: {field: PUSHED_AT, direction: DESC}) {
             nodes {
               name
               url
-              isPrivate
               defaultBranchRef {
                 target {
                   ... on Commit {
@@ -268,29 +265,19 @@ const fetchRecentCommits = async (username, token, limitDays = 7) => {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        timeout: 10000,
       }
     );
 
     if (response.data.errors) {
-      console.error('❌ GraphQL error fetching commits:', response.data.errors);
+      console.error('GraphQL error:', response.data.errors);
       return [];
     }
 
     const commits = [];
     const repos = response.data.data?.user?.repositories?.nodes || [];
 
-    console.log(`📦 Found ${repos.length} repositories for @${username}`);
-
     repos.forEach((repo) => {
-      if (!repo.defaultBranchRef) {
-        console.warn(`⚠️ Repository ${repo.name} has no default branch`);
-        return;
-      }
-
       const history = repo.defaultBranchRef?.target?.history?.edges || [];
-      console.log(`  📝 Repository ${repo.name} (${repo.isPrivate ? 'private' : 'public'}): ${history.length} commits found`);
-
       history.forEach((edge) => {
         const commit = edge.node;
         const commitDate = new Date(commit.committedDate);
@@ -299,7 +286,6 @@ const fetchRecentCommits = async (username, token, limitDays = 7) => {
           commits.push({
             repo: repo.name,
             repoUrl: repo.url,
-            isPrivate: repo.isPrivate,
             message: commit.message.split('\n')[0], // First line only
             oid: commit.oid, // Full commit hash for deduplication
             shortHash: commit.oid.substring(0, 7),
@@ -311,12 +297,9 @@ const fetchRecentCommits = async (username, token, limitDays = 7) => {
     });
 
     // Sort by date descending
-    const sortedCommits = commits.sort((a, b) => new Date(b.date) - new Date(a.date));
-    console.log(`✅ Fetched ${sortedCommits.length} recent commits for @${username} from last ${limitDays} days`);
-    
-    return sortedCommits;
+    return commits.sort((a, b) => new Date(b.date) - new Date(a.date));
   } catch (error) {
-    console.error('❌ Error fetching recent commits:', error.message);
+    console.error('Error fetching recent commits:', error);
     return [];
   }
 };

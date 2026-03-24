@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, MessageFlags } = require('discord.js');
 const { addUser, removeUser, listUserInfo, getUser } = require('../storage/userStorage');
 const { fetchRecentCommits, fetchContributionGraph } = require('../github/contributionGraphGenerator');
 const { generateWeeklyTextContribution } = require('../github/chartRenderer');
@@ -36,7 +36,7 @@ module.exports = [
       ),
 
     async execute(interaction) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       const username = interaction.options.getString('username');
       const token = interaction.options.getString('token');
@@ -96,7 +96,7 @@ module.exports = [
       .setDescription('View your tracked GitHub user info'),
 
     async execute(interaction) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       const info = listUserInfo(interaction.user.id);
 
@@ -115,7 +115,7 @@ module.exports = [
       .setDescription('Stop tracking your GitHub user'),
 
     async execute(interaction) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       const removed = await removeUser(interaction.user.id);
 
@@ -143,7 +143,7 @@ module.exports = [
       .setDescription('Show your recent commits from the last 24 hours'),
 
     async execute(interaction) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       const user = getUser(interaction.user.id);
 
@@ -204,7 +204,7 @@ module.exports = [
       .setDescription('View your yearly contribution heatmap'),
 
     async execute(interaction) {
-      await interaction.deferReply({ ephemeral: false });
+      await interaction.deferReply({ flags: [] });
 
       const user = getUser(interaction.user.id);
 

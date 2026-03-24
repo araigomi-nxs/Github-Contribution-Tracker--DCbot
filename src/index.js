@@ -66,43 +66,28 @@ const startAutoRefreshJob = () => {
   setInterval(async () => {
     try {
       const users = getAllUsers();
-      console.log(`\n⏰ Auto-refresh job running at ${new Date().toISOString()} - checking ${Object.keys(users).length} users`);
-
-      let successCount = 0;
-      let skipCount = 0;
-      let errorCount = 0;
 
       for (const [userId, user] of Object.entries(users)) {
         try {
-          console.log(`\n  👤 Processing ${user.githubUsername}...`);
-
           // Fetch recent commits from last 3 days to always have available commits
           const recentCommits = await fetchRecentCommits(user.githubUsername, user.githubToken, 3);
 
           if (recentCommits.length === 0) {
-            console.log(`  ✓ No commits found for ${user.githubUsername}`);
-            skipCount++;
+            console.log(`✓ No commits found for ${user.githubUsername}`);
             continue;
           }
 
-          console.log(`  📊 Found ${recentCommits.length} commits in last 3 days`);
-
           // Get only the latest commit
           const latestCommit = recentCommits[0];
-          console.log(`  💾 Latest: ${latestCommit.shortHash} - "${latestCommit.message}"`);
 
           // Check if this commit has already been sent
           const lastSentHash = getLastCommitHash(userId);
           if (lastSentHash === latestCommit.oid) {
-            console.log(`  ⏭️  Skipping duplicate commit: ${latestCommit.oid.substring(0, 7)}`);
-            skipCount++;
+            console.log(`⏭️  Skipping duplicate commit for ${user.githubUsername}: ${latestCommit.oid.substring(0, 7)}`);
             continue;
           }
 
-          console.log(`  🔄 New commit detected! Last sent: ${lastSentHash ? lastSentHash.substring(0, 7) : 'none'}`);
-
           // Fetch and add heatmap
-          console.log(`  📈 Fetching contribution graph...`);
           const graphData = await fetchContributionGraph(
             user.githubUsername,
             user.githubToken
@@ -113,8 +98,6 @@ const startAutoRefreshJob = () => {
           const description = `**Latest Commit**\n\n${commitMessage}`;
           const title = `📝 Latest Commit`;
 
-          console.log(`  📤 Sending Discord message...`);
-          
           await sendWebhookMessage(
             userId,
             title,
@@ -130,18 +113,15 @@ const startAutoRefreshJob = () => {
           await updateLastSyncTime(userId);
           await updateLastCommitHash(userId, latestCommit.oid);
 
-          successCount++;
-          console.log(`  ✅ Sent latest commit for ${user.githubUsername}: ${latestCommit.oid.substring(0, 7)}`);  
+          console.log(`✓ Sent latest commit for ${user.githubUsername}: ${latestCommit.oid.substring(0, 7)}`);  
         } catch (userError) {
-          errorCount++;
-          console.error(`  ❌ Error syncing user ${userId}:`, userError.message);
+          console.error(`Error syncing user ${userId}:`, userError);
         }
       }
 
-      console.log(`\n✓ Auto-refresh job completed at ${new Date().toISOString()}`);
-      console.log(`  📊 Results: ${successCount} sent, ${skipCount} skipped, ${errorCount} errors`);
+      console.log(`✓ Auto-refresh job completed at ${new Date().toISOString()}`);
     } catch (error) {
-      console.error('❌ Auto-refresh job error:', error);
+      console.error('Auto-refresh job error:', error);
     }
   }, REFRESH_INTERVAL);
 
