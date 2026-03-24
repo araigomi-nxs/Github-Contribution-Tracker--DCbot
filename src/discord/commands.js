@@ -263,4 +263,102 @@ module.exports = [
       }
     },
   },
+
+  {
+    data: new SlashCommandBuilder()
+      .setName('graphuser')
+      .setDescription('View any GitHub user\'s contribution heatmap')
+      .addStringOption((option) =>
+        option
+          .setName('username')
+          .setDescription('GitHub username to view')
+          .setRequired(true)
+      )
+      .addStringOption((option) =>
+        option
+          .setName('token')
+          .setDescription('Optional GitHub personal access token (for private contributions)')
+          .setRequired(false)
+      ),
+
+    async execute(interaction) {
+      await interaction.deferReply({ flags: [] });
+
+      const username = interaction.options.getString('username');
+      const tokenInput = interaction.options.getString('token');
+      const token = tokenInput || process.env.GITHUB_TOKEN;
+
+      if (!token) {
+        const embed = new EmbedBuilder()
+          .setTitle('❌ No GitHub Token Available')
+          .setColor(0xD5E339)
+          .setDescription('No GitHub token provided or configured. Please provide a token using the `token` parameter.');
+
+        await interaction.editReply({ embeds: [embed] });
+        return;
+      }
+
+      try {
+        console.log(`📊 Fetching contribution graph for @${username}...`);
+
+        const graphData = await fetchContributionGraph(username, token);
+
+        // Check if user exists and has data
+        if (!graphData || graphData.contributionCount === 0) {
+          const embed = new EmbedBuilder()
+            .setTitle('❌ User Not Found or No Data')
+            .setColor(0xD5E339)
+            .setDescription(`Could not fetch contribution data for **${username}**. The user may not exist or the GitHub token may not have access.`);
+
+          await interaction.editReply({ embeds: [embed] });
+          return;
+        }
+
+        const embed = new EmbedBuilder()
+          .setTitle(`📊 ${username}'s Contribution Heatmap`)
+          .setDescription(graphData.dateRange || 'Loading contribution data...')
+          .setColor(0xD5E339)
+          .setAuthor({ name: username })
+          .setURL(`https://github.com/${username}`)
+          .setTimestamp()
+          .setFooter({ text: `Total contributions: ${graphData.contributionCount || 0}` });
+
+        // Add weekly text contribution if available
+        if (graphData.contributionMap && graphData.contributionMap.size > 0) {
+          const weeklyText = generateWeeklyTextContribution(graphData.contributionMap);
+          if (weeklyText) {
+            embed.addFields({ name: '📈 This Week', value: weeklyText, inline: false });
+          }
+        }
+
+        // Display generated contribution chart as PNG
+        if (graphData.pngBuffer) {
+          const attachment = new AttachmentBuilder(graphData.pngBuffer, { name: `${username}-contributions.png` });
+          
+          embed.setImage(`attachment://${username}-contributions.png`);
+          embed.setDescription(graphData.dateRange || 'No recent contributions');
+          
+          await interaction.editReply({ embeds: [embed], files: [attachment] });
+        } else {
+          embed.setDescription(graphData.dateRange || 'No contribution data available');
+          await interaction.editReply({ embeds: [embed] });
+        }
+      } catch (error) {
+        console.error('Error fetching user contribution graph:', error);
+
+        const errorMessage = error.response?.status === 404 
+          ? `User **${username}** not found on GitHub.`
+          : error.response?.status === 401
+          ? 'Invalid GitHub token provided.'
+          : error.message;
+
+        const embed = new EmbedBuilder()
+          .setTitle('❌ Error Fetching Heatmap')
+          .setColor(0xD5E339)
+          .setDescription(`Failed to fetch contribution heatmap for **${username}**.\n\nReason: ${errorMessage}`);
+
+        await interaction.editReply({ embeds: [embed] });
+      }
+    },
+  },
 ];
